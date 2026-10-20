@@ -1,0 +1,9 @@
+{
+  "sommelier": {
+    "label": "ソムリエ1問一答",
+    "ledger": "sommelier/posts.json",
+    "image_base_url": "https://raw.githubusercontent.com/millegrains/sns-cards/main/",
+    "instagram_app_line": "📲 アプリはプロフィールのリンクから（iOS／Android 無料）",
+    "platforms": ["instagram", "facebook", "threads"]
+  }
+}

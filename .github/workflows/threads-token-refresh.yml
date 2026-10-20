@@ -1,0 +1,45 @@
+# Threadsの合鍵（60日で期限切れ）を毎月1日に延長し、金庫（Secrets）を新しい合鍵で上書きする
+# 失敗したら「失敗」で終わるので、GitHubから本人にメールが届きます
+name: Threads合鍵の自動延長
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"  # 毎月1日 日本時間 9:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Threadsの合鍵を延長する
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: python autopost/refresh_threads_token.py "$RUNNER_TEMP/threads_token"
+
+      - name: 金庫の THREADS_ACCESS_TOKEN を新しい合鍵で上書きする
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::金庫に GH_PAT_FOR_SECRETS（GitHubの個人用合鍵）が登録されていません"
+            exit 1
+          fi
+          if ! gh secret set THREADS_ACCESS_TOKEN --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/threads_token"; then
+            echo "::error::金庫の更新に失敗しました。GH_PAT_FOR_SECRETS の期限切れか、Secrets の書き込み許可が無い可能性があります"
+            exit 1
+          fi
+          echo "✅ 金庫の THREADS_ACCESS_TOKEN を更新しました"
+
+      - name: 書き出した合鍵を消す
+        if: always()
+        run: rm -f "$RUNNER_TEMP/threads_token"

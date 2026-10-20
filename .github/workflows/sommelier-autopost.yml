@@ -1,0 +1,110 @@
+# ソムリエ1問一答を毎日 朝7:00（問題）・夜20:50（解答）に Instagram／Facebookページ／Threads へ投稿する
+#
+# ・自動実行は、リポジトリの変数 AUTOPOST_ENABLED が true のときだけ動きます（止め方は autopost/README.md）
+# ・Actions タブ →「ソムリエ自動投稿」→「Run workflow」で手動実行もできます
+name: ソムリエ自動投稿
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # 朝: 日本時間 7:00（世界標準時の前日22:00）
+    - cron: "50 11 * * *"  # 夜: 日本時間 20:50
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "どちらの回？（morning=朝の問題／evening=夜の解答）"
+        type: choice
+        options: [morning, evening]
+        default: morning
+      mode:
+        description: "dry-run=試し（投稿しない）／live=本番（今日の分を投稿する）"
+        type: choice
+        options: [dry-run, live]
+        default: dry-run
+      date:
+        description: "試しで表示する日付 YYYY-MM-DD（空欄なら明日の朝・夜を両方表示。本番では無視）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sommelier-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    if: github.event_name == 'workflow_dispatch' || vars.AUTOPOST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVENT: ${{ github.event_name }}
+      CRON: ${{ github.event.schedule }}
+      IN_SLOT: ${{ inputs.slot }}
+      IN_MODE: ${{ inputs.mode }}
+      IN_DATE: ${{ inputs.date }}
+    steps:
+      # 遅れて起動しても最新の投稿記録（state.json）を読むため、常に main の最新を取得する
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 朝か夜か・本番か試しかを決める
+        id: decide
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            # 起動時刻ではなく「どちらの目覚ましで起きたか」で判断する（遅延しても取り違えない）
+            if [ "$CRON" = "0 22 * * *" ]; then slot=morning; else slot=evening; fi
+            mode=live
+          else
+            slot="$IN_SLOT"; mode="$IN_MODE"
+          fi
+          echo "slot=$slot" >> "$GITHUB_OUTPUT"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "回: $slot ／ 種類: $mode"
+
+      - name: 台帳のチェック（試しのときだけ）
+        if: steps.decide.outputs.mode == 'dry-run'
+        run: python sommelier/build_posts.py --check
+
+      - name: 試し（dry-run）
+        if: steps.decide.outputs.mode == 'dry-run'
+        run: |
+          if [ -n "$IN_DATE" ]; then
+            python autopost/post.py --exam sommelier --dry-run --date "$IN_DATE"
+          else
+            python autopost/post.py --exam sommelier --dry-run
+          fi
+
+      - name: 本番の投稿
+        if: steps.decide.outputs.mode == 'live'
+        env:
+          META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
+        run: python autopost/post.py --exam sommelier --slot "${{ steps.decide.outputs.slot }}"
+
+      # 一部が失敗しても、成功した分の記録は必ず書き戻す（二重投稿の防止）
+      - name: 投稿記録（state.json）を保管庫に書き戻す
+        if: always() && steps.decide.outputs.mode == 'live'
+        run: |
+          if git diff --quiet -- autopost/state.json && [ -z "$(git ls-files --others -- autopost/state.json)" ]; then
+            echo "記録の変更はありません"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add autopost/state.json
+          git commit -m "投稿記録を更新: $(TZ=Asia/Tokyo date +%Y-%m-%d) ${{ steps.decide.outputs.slot }}"
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 5
+          done
+          echo "::error::投稿記録を保管庫に書き戻せませんでした（次の回で二重投稿になる恐れがあります）"
+          exit 1
