@@ -34,6 +34,9 @@ THREADS_LIMIT = 500
 
 PLATFORM_NAMES = {"instagram": "Instagram", "facebook": "Facebookページ", "threads": "Threads"}
 SLOT_NAMES = {"morning": "朝（問題）", "evening": "夜（解答）"}
+MORNING_AT = dt.time(7, 0)    # 朝の回の時刻（日本時間）
+EVENING_AT = dt.time(20, 50)  # 夜の回の時刻（日本時間）
+RETRY_LIMIT = 3               # 自動実行で同じ投稿先が続けて失敗したら、その回はあきらめる回数
 APP_LINKS_RE = re.compile(r"^iOS → \S+\nAndroid → \S+$", re.MULTILINE)
 
 
@@ -207,6 +210,21 @@ def plan(platform: str, slot: str, entry: dict, exam: dict, day_state: dict) -> 
 
 # ---------------------------------------------------------------- 実行
 
+def due_slot(now: dt.datetime) -> tuple[str, dt.date]:
+    """今の日本時間から「いま投稿すべき回」を決める。
+
+    GitHubの目覚ましは何時間も遅れることがあるため、起動時刻の日付ではなく
+    「直前に来た 7:00 か 20:50 はどちらか」で判断する。
+      07:00〜20:49 → 今日の朝 ／ 20:50〜23:59 → 今日の夜 ／ 00:00〜06:59 → 前の日の夜
+    """
+    t = now.time()
+    if t >= EVENING_AT:
+        return "evening", now.date()
+    if t >= MORNING_AT:
+        return "morning", now.date()
+    return "evening", now.date() - dt.timedelta(days=1)
+
+
 def dry_run(exam_key: str, exam: dict, entries: dict, date: dt.date, slots: list[str]) -> int:
     entry = entries.get(date.isoformat())
     print(f"【試し（dry-run）】実際には投稿しません。対象日: {date.isoformat()}（日本時間）\n")
@@ -239,7 +257,8 @@ def dry_run(exam_key: str, exam: dict, entries: dict, date: dt.date, slots: list
     return 0
 
 
-def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, only: list[str]) -> int:
+def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, only: list[str],
+         retry_limit: bool = False) -> int:
     print(f"【本番】{exam['label']} {today.isoformat()}（日本時間）の{SLOT_NAMES[slot]}")
     entry = entries.get(today.isoformat())
     if entry is None:
@@ -252,6 +271,7 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
     image_url = exam["image_base_url"] + entry["card"]
     image_error: PostError | None = None
     failures: list[str] = []
+    tries = day_state.setdefault("failures", {}).setdefault(slot, {})
 
     for platform in exam["platforms"]:
         name = PLATFORM_NAMES[platform]
@@ -261,6 +281,10 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
         done = day_state.get(slot, {}).get(platform)
         if done:
             print(f"・{name}: 投稿済みのためスキップ（番号 {done['id']}）")
+            continue
+        if retry_limit and tries.get(platform, 0) >= RETRY_LIMIT:
+            print(f"・{name}: この回は{RETRY_LIMIT}回続けて失敗したため、今回は試しません"
+                  "（原因を直したら手動ボタンで実行してください）")
             continue
         action, parent, text = plan(platform, slot, entry, exam, day_state)
         try:
@@ -277,6 +301,8 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
                 new_id = POSTERS[platform](image_url, text)
         except PostError as e:
             failures.append(f"{name}: {e}")
+            tries[platform] = tries.get(platform, 0) + 1
+            save_state(state)
             print(f"・{name}: ❌ 失敗 … {e}")
             print(f"::error title={name}の投稿に失敗::{e}")
             continue
@@ -285,6 +311,7 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
             "kind": action,
             "at": dt.datetime.now(JST).isoformat(timespec="seconds"),
         }
+        tries.pop(platform, None)
         save_state(state)  # 1か所ごとにすぐ記録（途中で止まっても二重投稿しないように）
         print(f"・{name}: ✅ 完了 … {action}（番号 {new_id}）")
 
@@ -299,7 +326,8 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--exam", default="sommelier", help="資格名（autopost/exams.json の名前）")
-    ap.add_argument("--slot", choices=["morning", "evening"], help="朝(morning)か夜(evening)か")
+    ap.add_argument("--slot", choices=["auto", "morning", "evening"],
+                    help="auto=今の時刻から自動で判断／morning=今日の朝／evening=今日の夜")
     ap.add_argument("--dry-run", action="store_true", help="投稿せずに内容を表示するだけ")
     ap.add_argument("--date", help="試しで表示する日付 YYYY-MM-DD（省略時は明日）。本番では使えません")
     ap.add_argument("--only", default="", help="本番で一部の投稿先だけにする（例: threads,facebook）")
@@ -318,7 +346,7 @@ def main() -> int:
         return dry_run(args.exam, exam, entries, date, [args.slot] if args.slot else ["morning", "evening"])
 
     if not args.slot:
-        print("本番では --slot morning か --slot evening が必要です")
+        print("本番では --slot auto／morning／evening のどれかが必要です")
         return 2
     if args.date:
         print("本番では日付を指定できません（日本時間の今日の分だけを投稿します）")
@@ -328,7 +356,11 @@ def main() -> int:
     if bad:
         print("--only に不明な投稿先があります: " + "、".join(bad))
         return 2
-    return live(args.exam, exam, entries, today, args.slot, only)
+    slot = args.slot
+    if slot == "auto":
+        slot, today = due_slot(dt.datetime.now(JST))
+        print(f"（自動判定）今の時刻なら {today.isoformat()} の{SLOT_NAMES[slot]}の番です")
+    return live(args.exam, exam, entries, today, slot, only, retry_limit=args.slot == "auto")
 
 
 if __name__ == "__main__":

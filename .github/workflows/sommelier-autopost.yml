@@ -1,13 +1,19 @@
 # ソムリエ1問一答を毎日 朝7:00（問題）・夜20:50（解答）に Instagram／Facebookページ／Threads へ投稿する
 #
+# ・GitHubの目覚ましは数時間遅れることがあるため、朝・夜それぞれ10分おきに何度も起こし、
+#   「今の時刻ならどの回の番か」を post.py が判断して、まだ出していない分だけ投稿する（二重投稿はしない）
 # ・自動実行は、リポジトリの変数 AUTOPOST_ENABLED が true のときだけ動きます（止め方は autopost/README.md）
 # ・Actions タブ →「ソムリエ自動投稿」→「Run workflow」で手動実行もできます
 name: ソムリエ自動投稿
 
 on:
   schedule:
-    - cron: "0 22 * * *"   # 朝: 日本時間 7:00（世界標準時の前日22:00）
-    - cron: "50 11 * * *"  # 夜: 日本時間 20:50
+    # 朝: 日本時間 7:03〜11:53 に10分おき（世界標準時は前日22時〜2時台）
+    - cron: "3,13,23,33,43,53 22,23 * * *"
+    - cron: "3,13,23,33,43,53 0-2 * * *"
+    # 夜: 日本時間 20:53〜翌1:53 に10分おき（世界標準時は11時〜16時台）
+    - cron: "53 11 * * *"
+    - cron: "3,13,23,33,43,53 12-16 * * *"
   workflow_dispatch:
     inputs:
       slot:
@@ -39,7 +45,6 @@ jobs:
     timeout-minutes: 20
     env:
       EVENT: ${{ github.event_name }}
-      CRON: ${{ github.event.schedule }}
       IN_SLOT: ${{ inputs.slot }}
       IN_MODE: ${{ inputs.mode }}
       IN_DATE: ${{ inputs.date }}
@@ -57,8 +62,8 @@ jobs:
         id: decide
         run: |
           if [ "$EVENT" = "schedule" ]; then
-            # 起動時刻ではなく「どちらの目覚ましで起きたか」で判断する（遅延しても取り違えない）
-            if [ "$CRON" = "0 22 * * *" ]; then slot=morning; else slot=evening; fi
+            # 朝か夜かは post.py が今の時刻から判断する（遅れて起きても日付を取り違えない）
+            slot=auto
             mode=live
           else
             slot="$IN_SLOT"; mode="$IN_MODE"
