@@ -207,3 +207,24 @@ GitHub の自動実行機能（GitHub Actions）で動くので、パソコン�
 2. `autopost/exams.json` に資格を1つ追加する（台帳の場所・画像アドレス・Instagram用の置き換え文・投稿先）
 3. `.github/workflows/sommelier-autopost.yml` を複製して名前を変え、`--exam takken` にする
    （投稿するアカウントが違う場合は、金庫の名前も資格ごとに分けて、そのワークフローで読み替える）
+
+---
+
+## 9. 時刻どおりに動かす外部の目覚まし（Cloudflare Workers）
+
+GitHub 自前の目覚ましは、混雑すると数時間遅れることがあります（実際に 20:50 の回が翌 1:07 に動いたことがありました）。
+そこで、時刻に正確な **Cloudflare Workers** から、日本時間 7:00 と 20:50 ちょうどに GitHub を呼び出します。
+GitHub 自前の目覚まし（朝 7:03〜11:53・夜 20:53〜翌 1:53 に10分おき）は **予備** として残してあり、外部の目覚ましが止まっても投稿が抜けることはありません。何度呼ばれても二重投稿はしません。
+
+### 設定のしかた
+1. **GitHubの個人用合鍵（起動用）を作る**：Settings → Developer settings → Fine-grained tokens → Generate new token
+   - Resource owner：millegrains ／ Repository access：Only select → `millegrains/sns-cards`
+   - Permissions：**Actions → Read and write**（Metadata：Read-only は自動）
+2. **Cloudflare に無料登録** し、**Workers & Pages** → **Create** → **Hello World** を選んで作成（名前の例：`millegrains-autopost-alarm`）
+3. **Edit code** で中身を全部消し、`autopost/cloudflare-worker.js` を貼り付けて **Deploy**
+4. その Worker の **Settings** → **Variables and Secrets** → **Add** → 種類 **Secret**、名前 `GITHUB_TOKEN`、値に 1. の合鍵
+5. **Settings** → **Trigger Events**（Triggers）→ **Cron Triggers** に次の4つを追加（世界標準時で書きます）
+   - `0 22 * * *`（朝 7:00） ／ `5 22 * * *`（予備 7:05）
+   - `50 11 * * *`（夜 20:50） ／ `55 11 * * *`（予備 20:55）
+
+止めたいときは、これまでどおり変数 `AUTOPOST_ENABLED` を `false` にすれば、外部の目覚ましから呼ばれても投稿しません。
