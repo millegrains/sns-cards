@@ -28,7 +28,7 @@ CONFIG = REPO / "autopost" / "exams.json"
 STATE = REPO / "autopost" / "state.json"
 
 JST = dt.timezone(dt.timedelta(hours=9), "JST")
-GRAPH = f"https://graph.facebook.com/{os.environ.get('META_GRAPH_VERSION') or 'v23.0'}"
+GRAPH = f"https://graph.facebook.com/{os.environ.get('META_GRAPH_VERSION') or 'v26.0'}"
 THREADS = "https://graph.threads.net/v1.0"
 THREADS_LIMIT = 500
 
