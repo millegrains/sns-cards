@@ -115,7 +115,7 @@ GitHub の自動実行機能（GitHub Actions）で動くので、パソコン�
 | `FB_PAGE_ID` | ④-6 のページの番号 |
 | `IG_USER_ID` | ④-8 のInstagramの番号 |
 | `THREADS_ACCESS_TOKEN` | ⑤-3 のThreadsの合鍵 |
-| `THREADS_USER_ID` | ⑤-4 のThreadsの番号 |
+| `THREADS_USER_ID` | ⑤-4 のThreadsの番号（**省略可**。無ければ合鍵から自動で調べます） |
 | `GH_PAT_FOR_SECRETS` | ⑥ のGitHubの個人用合鍵 |
 
 > 合鍵や番号は、絶対に保管庫のファイルやメモに書かないでください（この保管庫は公開されています）。
