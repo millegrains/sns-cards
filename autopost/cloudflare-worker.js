@@ -4,7 +4,7 @@
 // GitHub の自動投稿ワークフローを slot=auto・mode=live で起動する。
 // GitHub 自前の目覚まし（schedule）は数時間遅れることがあるため、時刻どおりの起動はこちらが受け持つ。
 // 何度起動しても、投稿済みの分は投稿記録を見てスキップされるので二重投稿にはならない。
-// （各ワークフローのスイッチ AUTOPOST_ENABLED／CHINTAI_…／MANKAN_… が true でなければ投稿もしない）
+// （各ワークフローのスイッチ AUTOPOST_ENABLED／CHINTAI_…／MANKAN_…／KANGYO_… が true でなければ投稿もしない）
 //
 // Cloudflare 側の設定（autopost/README.md 9章・10章）:
 //   ・Secret  GITHUB_TOKEN … sns-cards の Actions を Read and write できる GitHub の個人用合鍵
@@ -18,11 +18,13 @@ const TIMETABLE = {
   "7:30": ["chintai-autopost.yml"],
   "7:55": ["mankan-autopost.yml"],
   "8:00": ["mankan-autopost.yml"],
+  "8:25": ["kangyo-autopost.yml"],
+  "8:30": ["kangyo-autopost.yml"],
   "20:25": ["chintai-autopost.yml"],
   "20:30": ["chintai-autopost.yml"],
   "20:50": ["sommelier-autopost.yml"],
-  "20:55": ["sommelier-autopost.yml", "mankan-autopost.yml"],
-  "21:00": ["mankan-autopost.yml"],
+  "20:55": ["sommelier-autopost.yml", "mankan-autopost.yml", "kangyo-autopost.yml"],
+  "21:00": ["mankan-autopost.yml", "kangyo-autopost.yml"],
 };
 
 const API = "https://api.github.com/repos/millegrains/sns-cards/actions/workflows/";

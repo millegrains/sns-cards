@@ -4,7 +4,11 @@
     "ledger": "sommelier/posts.json",
     "image_base_url": "https://raw.githubusercontent.com/millegrains/sns-cards/main/",
     "instagram_app_line": "📲 アプリはプロフィールのリンクから（iOS／Android 無料）",
-    "platforms": ["instagram", "facebook", "threads"]
+    "platforms": [
+      "instagram",
+      "facebook",
+      "threads"
+    ]
   },
   "mankan": {
     "label": "マン管1問一答（@millegrains_app）",
@@ -13,11 +17,20 @@
     "image_base_url": "https://raw.githubusercontent.com/millegrains/sns-cards/main/",
     "morning_at": "07:55",
     "evening_at": "20:55",
-    "platforms": ["threads", "instagram"],
+    "platforms": [
+      "threads",
+      "instagram"
+    ],
     "instagram_api": "instagram_login",
     "instagram_replacements": [
-      ["👇 アプリで今すぐ答え合わせ\\nhttps?://\\S+", "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"],
-      ["iOS: https?://\\S+\\nAndroid: https?://\\S+", "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"]
+      [
+        "👇 アプリで今すぐ答え合わせ\\nhttps?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ],
+      [
+        "iOS: https?://\\S+\\nAndroid: https?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ]
     ],
     "threads_reply_image": true,
     "skip_platform_without_token": true
@@ -29,11 +42,45 @@
     "image_base_url": "https://raw.githubusercontent.com/millegrains/sns-cards/main/",
     "morning_at": "07:25",
     "evening_at": "20:25",
-    "platforms": ["threads", "instagram"],
+    "platforms": [
+      "threads",
+      "instagram"
+    ],
     "instagram_api": "instagram_login",
     "instagram_replacements": [
-      ["👇 アプリで今すぐ答え合わせ\\nhttps?://\\S+", "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"],
-      ["iOS: https?://\\S+\\nAndroid: https?://\\S+", "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"]
+      [
+        "👇 アプリで今すぐ答え合わせ\\nhttps?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ],
+      [
+        "iOS: https?://\\S+\\nAndroid: https?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ]
+    ],
+    "threads_reply_image": true,
+    "skip_platform_without_token": true
+  },
+  "kangyo": {
+    "label": "管業1問一答（@millegrains_app）",
+    "ledger": "kangyo/posts.json",
+    "state": "autopost/state_kangyo.json",
+    "image_base_url": "https://raw.githubusercontent.com/millegrains/sns-cards/main/",
+    "morning_at": "08:25",
+    "evening_at": "20:55",
+    "platforms": [
+      "threads",
+      "instagram"
+    ],
+    "instagram_api": "instagram_login",
+    "instagram_replacements": [
+      [
+        "👇 アプリで今すぐ答え合わせ\\nhttps?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ],
+      [
+        "iOS: https?://\\S+\\nAndroid: https?://\\S+",
+        "📲 アプリはプロフィールのリンクから（iOS／Android 無料）"
+      ]
     ],
     "threads_reply_image": true,
     "skip_platform_without_token": true

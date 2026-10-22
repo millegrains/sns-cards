@@ -233,19 +233,21 @@ GitHub 自前の目覚まし（朝 7:03〜11:53・夜 20:53〜翌 1:53 に10分�
 
 ---
 
-## 10. マン管・賃管（@millegrains_app の Threads・Instagram）
+## 10. マン管・賃管・管業（@millegrains_app の Threads・Instagram）
 
 2026/10/22 追加。ソムリエと同じ仕組みで、**@millegrains_app** の Threads と Instagram に投稿します（Facebook・Xには出しません。ワイン用の @millegrains には出しません）。
 
-| | マン管 | 賃管 |
-|---|---|---|
-| 朝（問題） | 7:55 カード画像＋本文 | 7:25 カード画像＋本文 |
-| 夜（解答） | 20:55 Threads＝朝への返信（カード画像付き）／Instagram＝朝へのコメント | 20:25 同左 |
-| 台帳 | `mankan/posts.json` | `chintai/posts.json` |
-| 原稿 | `mankan/source/mankan_threads_schedule_*.xlsx` | `chintai/source/chintai_threads_schedule_*.xlsx` |
-| 投稿記録 | `autopost/state_mankan.json` | `autopost/state_chintai.json` |
-| ワークフロー | マン管自動投稿（`mankan-autopost.yml`） | 賃管自動投稿（`chintai-autopost.yml`） |
-| スイッチ（変数） | `MANKAN_AUTOPOST_ENABLED` | `CHINTAI_AUTOPOST_ENABLED` |
+| | 賃管 | マン管 | 管業 |
+|---|---|---|---|
+| 朝（問題） | 7:25 | 7:55 | 8:25 |
+| 夜（解答） | 20:25 | 20:55 | 20:55 |
+| 台帳 | `chintai/posts.json` | `mankan/posts.json` | `kangyo/posts.json` |
+| 原稿 | `chintai/source/*.xlsx` | `mankan/source/*.xlsx` | `kangyo/source/*.xlsx` |
+| 投稿記録 | `autopost/state_chintai.json` | `autopost/state_mankan.json` | `autopost/state_kangyo.json` |
+| ワークフロー | 賃管自動投稿 | マン管自動投稿 | 管業自動投稿 |
+| スイッチ（変数） | `CHINTAI_AUTOPOST_ENABLED` | `MANKAN_AUTOPOST_ENABLED` | `KANGYO_AUTOPOST_ENABLED` |
+
+- 朝＝カード画像＋本文。夜＝Threads は朝への返信（カード画像付き）、Instagram は朝へのコメント
 
 - 原稿は 2026/9 に Zoho 用に作った **Threads 用の文面** をそのまま使います（リンク付き）。台帳は 2026/12/31 まで。過ぎた日はさかのぼりません
 - **Instagram だけ** 本文を書き換えます：「👇 アプリで今すぐ答え合わせ＋リンク」「iOS:／Android: の2行」を「📲 アプリはプロフィールのリンクから（iOS／Android 無料）」に置き換え。置き換え後にリンクが残っていたら、安全のため Instagram への投稿を止めます
@@ -262,7 +264,7 @@ GitHub 自前の目覚まし（朝 7:03〜11:53・夜 20:53〜翌 1:53 に10分�
 - 延長は「アプリ用合鍵の自動延長」（`app-token-refresh.yml`）。失敗したら GitHub からメールが届きます
 
 ### 止める・再開する
-変数 `MANKAN_AUTOPOST_ENABLED`／`CHINTAI_AUTOPOST_ENABLED` を `false`／`true`。片方だけ止められます。ソムリエ（`AUTOPOST_ENABLED`）とは別です。
+変数 `CHINTAI_AUTOPOST_ENABLED`／`MANKAN_AUTOPOST_ENABLED`／`KANGYO_AUTOPOST_ENABLED` を `false`／`true`。資格ごとに止められます。ソムリエ（`AUTOPOST_ENABLED`）とは別です。
 
 ### 原稿を直したいとき
 1. `mankan/source/` の xlsx を直す（または差し替える）
