@@ -33,7 +33,11 @@
       ]
     ],
     "threads_reply_image": true,
-    "skip_platform_without_token": true
+    "skip_platform_without_token": true,
+    "threads_link_tag": {
+      "page": "https://millegrains.github.io/sns-cards/mankan.html",
+      "code": "th"
+    }
   },
   "chintai": {
     "label": "賃管1問一答（@millegrains_app）",
@@ -58,7 +62,11 @@
       ]
     ],
     "threads_reply_image": true,
-    "skip_platform_without_token": true
+    "skip_platform_without_token": true,
+    "threads_link_tag": {
+      "page": "https://millegrains.github.io/sns-cards/chintai.html",
+      "code": "th"
+    }
   },
   "kangyo": {
     "label": "管業1問一答（@millegrains_app）",
@@ -83,6 +91,10 @@
       ]
     ],
     "threads_reply_image": true,
-    "skip_platform_without_token": true
+    "skip_platform_without_token": true,
+    "threads_link_tag": {
+      "page": "https://millegrains.github.io/sns-cards/kangyo.html",
+      "code": "th"
+    }
   }
 }

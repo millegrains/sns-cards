@@ -126,13 +126,27 @@
 
   <script>
     (function() {
+      var iosUrl = "https://apps.apple.com/jp/app/id6800487004";
+      var androidUrl = "https://play.google.com/store/apps/details?id=com.millegrains.takken120min50questions";
+
+      // どこから来たかの印（?s=th など）を、App Store・Google Play へ引き継ぐ（チラシの番号付け）
+      // 各ストアの分析画面で、投稿先ごとのダウンロード数が分かれて見える
+      var sources = { th: "threads", ig: "instagram", fb: "facebook" };
+      var m = /[?&]s=([a-z]+)/.exec(location.search);
+      var src = m && sources[m[1]];
+      if (src) {
+        iosUrl += "?pt=129007059&ct=" + src + "&mt=8";
+        androidUrl += "&referrer=" + encodeURIComponent("utm_source=" + src + "&utm_medium=social");
+        var links = document.querySelectorAll("a.btn-ios, a.btn-android");
+        for (var k = 0; k < links.length; k++) {
+          links[k].href = links[k].classList.contains("btn-ios") ? iosUrl : androidUrl;
+        }
+      }
+
       var ua = (navigator.userAgent || navigator.vendor || window.opera || '').toLowerCase();
       var isBot = /bot|crawler|spider|facebook|twitter|threads|slack|discord|zoho|telegram/i.test(ua);
       if (isBot) return;
 
-      var iosUrl = "https://apps.apple.com/jp/app/id6800487004";
-      var androidUrl = "https://play.google.com/store/apps/details?id=com.millegrains.takken120min50questions";
-      
       if (/ipad|iphone|ipod/.test(ua) && !window.MSStream) {
         window.location.replace(iosUrl);
       } else if (/android/.test(ua)) {

@@ -228,9 +228,22 @@ def reply_kind(platform: str, exam: dict) -> str:
 
 # ---------------------------------------------------------------- 本文・台帳・記録
 
+def tag_links(text: str, tag: dict) -> str:
+    """Threads用：リンクに「Threadsから来た」印（?s=th）を付ける（チラシの番号付け）。
+    ストア直行の iOS／Android の2行は、案内所（振り分けページ）へのリンク1本にまとめる（文字数の節約にもなる）。
+    案内所が印を App Store（ct=threads）・Google Play（utm_source=threads）へ引き継ぎ、
+    各ストアの分析画面で、投稿先ごとのダウンロード数が分かれて見えるようになる。"""
+    page = tag["page"]
+    text = re.sub(r"iOS: https?://\S+\nAndroid: https?://\S+", page, text)
+    return re.sub(re.escape(page) + r"(?!\?)", page + "?s=" + tag["code"], text)
+
+
 def adapt(platform: str, text: str, exam: dict) -> str:
     """原稿を各投稿先向けに直す（Instagramだけ、押せないリンクの行を「プロフィールのリンクから」に置き換え）。"""
     if platform != "instagram":
+        tag = exam.get("threads_link_tag")
+        if tag and platform == "threads":
+            text = tag_links(text, tag)
         return text
     rules = exam.get("instagram_replacements")
     if rules:
