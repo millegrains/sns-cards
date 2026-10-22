@@ -8,7 +8,14 @@
       "instagram",
       "facebook",
       "threads"
-    ]
+    ],
+    "link_tag": {
+      "page": "https://millegrains.github.io/sns-cards/sommelier.html",
+      "codes": {
+        "threads": "th",
+        "facebook": "fb"
+      }
+    }
   },
   "mankan": {
     "label": "マン管1問一答（@millegrains_app）",
@@ -34,9 +41,11 @@
     ],
     "threads_reply_image": true,
     "skip_platform_without_token": true,
-    "threads_link_tag": {
+    "link_tag": {
       "page": "https://millegrains.github.io/sns-cards/mankan.html",
-      "code": "th"
+      "codes": {
+        "threads": "th"
+      }
     }
   },
   "chintai": {
@@ -63,9 +72,11 @@
     ],
     "threads_reply_image": true,
     "skip_platform_without_token": true,
-    "threads_link_tag": {
+    "link_tag": {
       "page": "https://millegrains.github.io/sns-cards/chintai.html",
-      "code": "th"
+      "codes": {
+        "threads": "th"
+      }
     }
   },
   "kangyo": {
@@ -92,9 +103,11 @@
     ],
     "threads_reply_image": true,
     "skip_platform_without_token": true,
-    "threads_link_tag": {
+    "link_tag": {
       "page": "https://millegrains.github.io/sns-cards/kangyo.html",
-      "code": "th"
+      "codes": {
+        "threads": "th"
+      }
     }
   }
 }
