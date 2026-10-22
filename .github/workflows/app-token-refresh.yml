@@ -1,0 +1,61 @@
+# @millegrains_app（マン管・賃管）の合鍵2本（60日で期限切れ）を毎月1日に延長し、金庫（Secrets）を上書きする
+#   APP_THREADS_ACCESS_TOKEN … Threads ／ APP_IG_ACCESS_TOKEN … Instagram
+# まだ金庫に登録されていない合鍵は「準備中」として飛ばします。延長に失敗したら「失敗」で終わり、GitHubからメールが届きます
+name: アプリ用合鍵の自動延長
+
+on:
+  schedule:
+    - cron: "10 0 1 * *"  # 毎月1日 日本時間 9:10（ソムリエの延長の10分後）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: threads
+            secret: APP_THREADS_ACCESS_TOKEN
+          - kind: instagram
+            secret: APP_IG_ACCESS_TOKEN
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: ${{ matrix.secret }} を延長する
+        id: refresh
+        env:
+          CURRENT_TOKEN: ${{ secrets[matrix.secret] }}
+        run: |
+          if [ -z "$CURRENT_TOKEN" ]; then
+            echo "金庫に ${{ matrix.secret }} がまだ無いため、今回は飛ばします（準備中）"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          python autopost/refresh_threads_token.py "$RUNNER_TEMP/new_token" --kind ${{ matrix.kind }} --env CURRENT_TOKEN
+
+      - name: 金庫の ${{ matrix.secret }} を新しい合鍵で上書きする
+        if: steps.refresh.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::金庫に GH_PAT_FOR_SECRETS（GitHubの個人用合鍵）が登録されていません"
+            exit 1
+          fi
+          if ! gh secret set ${{ matrix.secret }} --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/new_token"; then
+            echo "::error::金庫の更新に失敗しました。GH_PAT_FOR_SECRETS の期限切れか、Secrets の書き込み許可が無い可能性があります"
+            exit 1
+          fi
+          echo "✅ 金庫の ${{ matrix.secret }} を更新しました"
+
+      - name: 書き出した合鍵を消す
+        if: always()
+        run: rm -f "$RUNNER_TEMP/new_token"

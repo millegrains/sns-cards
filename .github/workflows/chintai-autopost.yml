@@ -1,0 +1,125 @@
+# 賃管1問一答を毎日 朝7:25（問題）・夜20:25（解答）に @millegrains_app の Threads／Instagram へ投稿する
+#
+# ・時刻どおりの起動は、外部の目覚まし（Cloudflare Workers, autopost/cloudflare-worker.js）が
+#   7:25 と 20:25 に slot=auto・mode=live でこのワークフローを呼ぶことで行う
+# ・下の schedule は予備。GitHubの目覚ましは数時間遅れることがあるため、朝・夜それぞれ10分おきに何度も起こし、
+#   「今の時刻ならどの回の番か」を post.py が判断して、まだ出していない分だけ投稿する（二重投稿はしない）
+# ・自動実行は、リポジトリの変数 CHINTAI_AUTOPOST_ENABLED が true のときだけ動きます（止め方は autopost/README.md 10章）
+# ・合鍵は金庫の APP_THREADS_ACCESS_TOKEN（Threads）・APP_IG_ACCESS_TOKEN（Instagram）。
+#   まだ登録されていない投稿先は「準備中」として飛ばします（失敗にはなりません）
+# ・Actions タブ →「賃管自動投稿」→「Run workflow」で手動実行もできます
+name: 賃管自動投稿
+
+on:
+  schedule:
+    # 朝: 日本時間 7:35〜11時台に10分おき（世界標準時は前日22時〜2時台）
+    - cron: "35,45,55 22 * * *"
+    - cron: "5,15,25,35,45,55 23,0-2 * * *"
+    # 夜: 日本時間 20:35〜翌0時台に10分おき（世界標準時は11時〜15時台）
+    - cron: "35,45,55 11 * * *"
+    - cron: "5,15,25,35,45,55 12-15 * * *"
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "どちらの回？（morning=今日の朝の問題／evening=今日の夜の解答／auto=今の時刻から自動で判断）"
+        type: choice
+        options: [morning, evening, auto]
+        default: morning
+      mode:
+        description: "dry-run=試し（投稿しない）／live=本番（今日の分を投稿する）"
+        type: choice
+        options: [dry-run, live]
+        default: dry-run
+      date:
+        description: "試しで表示する日付 YYYY-MM-DD（空欄なら明日の朝・夜を両方表示。本番では無視）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: chintai-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    if: github.event_name == 'workflow_dispatch' || vars.CHINTAI_AUTOPOST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVENT: ${{ github.event_name }}
+      IN_SLOT: ${{ inputs.slot }}
+      IN_MODE: ${{ inputs.mode }}
+      IN_DATE: ${{ inputs.date }}
+      ENABLED: ${{ vars.CHINTAI_AUTOPOST_ENABLED }}
+    steps:
+      # 遅れて起動しても最新の投稿記録を読むため、常に main の最新を取得する
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 朝か夜か・本番か試しかを決める
+        id: decide
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            slot=auto
+            mode=live
+          else
+            slot="$IN_SLOT"; mode="$IN_MODE"
+          fi
+          # 外部の目覚まし（slot=auto）も、スイッチ CHINTAI_AUTOPOST_ENABLED が true のときだけ投稿する
+          if [ "$slot" = "auto" ] && [ "$mode" = "live" ] && [ "$ENABLED" != "true" ]; then
+            echo "自動実行のスイッチ（CHINTAI_AUTOPOST_ENABLED）が true ではないため、投稿しません"
+            mode=off
+          fi
+          echo "slot=$slot" >> "$GITHUB_OUTPUT"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "回: $slot ／ 種類: $mode"
+
+      - name: 台帳のチェック（試しのときだけ）
+        if: steps.decide.outputs.mode == 'dry-run'
+        run: python autopost/build_threads_posts.py chintai --check
+
+      - name: 試し（dry-run）
+        if: steps.decide.outputs.mode == 'dry-run'
+        run: |
+          if [ -n "$IN_DATE" ]; then
+            python autopost/post.py --exam chintai --dry-run --date "$IN_DATE"
+          else
+            python autopost/post.py --exam chintai --dry-run
+          fi
+
+      - name: 本番の投稿
+        if: steps.decide.outputs.mode == 'live'
+        env:
+          # @millegrains_app 用の合鍵を、post.py が読む名前に読み替える（ソムリエの合鍵は使わない）
+          THREADS_ACCESS_TOKEN: ${{ secrets.APP_THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.APP_THREADS_USER_ID }}
+          IG_LOGIN_ACCESS_TOKEN: ${{ secrets.APP_IG_ACCESS_TOKEN }}
+          IG_LOGIN_USER_ID: ${{ secrets.APP_IG_USER_ID }}
+          META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
+        run: python autopost/post.py --exam chintai --slot "${{ steps.decide.outputs.slot }}"
+
+      # 一部が失敗しても、成功した分の記録は必ず書き戻す（二重投稿の防止）
+      - name: 投稿記録（autopost/state_chintai.json）を保管庫に書き戻す
+        if: always() && steps.decide.outputs.mode == 'live'
+        run: |
+          f=autopost/state_chintai.json
+          if [ ! -f "$f" ] || { git diff --quiet -- "$f" && [ -z "$(git ls-files --others -- "$f")" ]; }; then
+            echo "記録の変更はありません"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$f"
+          git commit -m "投稿記録を更新（賃管）: $(TZ=Asia/Tokyo date +%Y-%m-%d) ${{ steps.decide.outputs.slot }}"
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 5
+          done
+          echo "::error::投稿記録を保管庫に書き戻せませんでした（次の回で二重投稿になる恐れがあります）"
+          exit 1

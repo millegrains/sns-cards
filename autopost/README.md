@@ -199,7 +199,9 @@ GitHub の自動実行機能（GitHub Actions）で動くので、パソコン�
 
 ---
 
-## 8. 他の資格（宅建・管業・マン管・賃管）を足すとき
+## 8. 他の資格（宅建・管業など）を足すとき
+
+（マン管・賃管は 10章で追加済み。Threads用の xlsx 原稿なら `autopost/build_threads_posts.py` がそのまま使えます）
 
 同じ仕組みで流せるように作ってあります。
 
@@ -223,8 +225,56 @@ GitHub 自前の目覚まし（朝 7:03〜11:53・夜 20:53〜翌 1:53 に10分�
 2. **Cloudflare に無料登録** し、**Workers & Pages** → **Create** → **Hello World** を選んで作成（名前の例：`millegrains-autopost-alarm`）
 3. **Edit code** で中身を全部消し、`autopost/cloudflare-worker.js` を貼り付けて **Deploy**
 4. その Worker の **Settings** → **Variables and Secrets** → **Add** → 種類 **Secret**、名前 `GITHUB_TOKEN`、値に 1. の合鍵
-5. **Settings** → **Trigger Events**（Triggers）→ **Cron Triggers** に次の4つを追加（世界標準時で書きます）
-   - `0 22 * * *`（朝 7:00） ／ `5 22 * * *`（予備 7:05）
-   - `50 11 * * *`（夜 20:50） ／ `55 11 * * *`（予備 20:55）
+5. **Settings** → **Trigger Events**（Triggers）→ **Cron Triggers** に `* * * * *`（**毎分**）を1つだけ登録
+   - 目覚ましは毎分鳴りますが、プログラムの中の **時刻表**（`TIMETABLE`）に書いた時刻だけ GitHub を起こします
+   - 2026/10/22 までは「7:00・7:05・20:50・20:55 の4つの目覚まし」方式でした。切り替え手順は 10章
 
 止めたいときは、これまでどおり変数 `AUTOPOST_ENABLED` を `false` にすれば、外部の目覚ましから呼ばれても投稿しません。
+
+---
+
+## 10. マン管・賃管（@millegrains_app の Threads・Instagram）
+
+2026/10/22 追加。ソムリエと同じ仕組みで、**@millegrains_app** の Threads と Instagram に投稿します（Facebook・Xには出しません。ワイン用の @millegrains には出しません）。
+
+| | マン管 | 賃管 |
+|---|---|---|
+| 朝（問題） | 7:55 カード画像＋本文 | 7:25 カード画像＋本文 |
+| 夜（解答） | 20:55 Threads＝朝への返信（カード画像付き）／Instagram＝朝へのコメント | 20:25 同左 |
+| 台帳 | `mankan/posts.json` | `chintai/posts.json` |
+| 原稿 | `mankan/source/mankan_threads_schedule_*.xlsx` | `chintai/source/chintai_threads_schedule_*.xlsx` |
+| 投稿記録 | `autopost/state_mankan.json` | `autopost/state_chintai.json` |
+| ワークフロー | マン管自動投稿（`mankan-autopost.yml`） | 賃管自動投稿（`chintai-autopost.yml`） |
+| スイッチ（変数） | `MANKAN_AUTOPOST_ENABLED` | `CHINTAI_AUTOPOST_ENABLED` |
+
+- 原稿は 2026/9 に Zoho 用に作った **Threads 用の文面** をそのまま使います（リンク付き）。台帳は 2026/12/31 まで。過ぎた日はさかのぼりません
+- **Instagram だけ** 本文を書き換えます：「👇 アプリで今すぐ答え合わせ＋リンク」「iOS:／Android: の2行」を「📲 アプリはプロフィールのリンクから（iOS／Android 無料）」に置き換え。置き換え後にリンクが残っていたら、安全のため Instagram への投稿を止めます
+- Instagram は **Instagramログイン方式**（Facebookページを使わない）。ソムリエの Instagram（Facebookページ経由）とは合鍵も窓口も別です
+
+### 金庫（Secrets）に入れるもの
+| 名前 | 中身 |
+|---|---|
+| `APP_THREADS_ACCESS_TOKEN` | @millegrains_app の Threads の合鍵（60日。毎月1日 9:10 に自動延長） |
+| `APP_IG_ACCESS_TOKEN` | @millegrains_app の Instagram の合鍵（Instagramログイン方式、60日。毎月1日 9:10 に自動延長） |
+| （`APP_THREADS_USER_ID`・`APP_IG_USER_ID`） | 登録しなくてよい。合鍵から自動で調べます |
+
+- **まだ金庫に無い合鍵の投稿先は「準備中」として飛ばします**（失敗にはなりません）。例：Instagram の合鍵だけ先に入れれば、Instagram だけで始められます
+- 延長は「アプリ用合鍵の自動延長」（`app-token-refresh.yml`）。失敗したら GitHub からメールが届きます
+
+### 止める・再開する
+変数 `MANKAN_AUTOPOST_ENABLED`／`CHINTAI_AUTOPOST_ENABLED` を `false`／`true`。片方だけ止められます。ソムリエ（`AUTOPOST_ENABLED`）とは別です。
+
+### 原稿を直したいとき
+1. `mankan/source/` の xlsx を直す（または差し替える）
+2. `python autopost/build_threads_posts.py mankan` →「✅ チェック合格」を確認（カード画像が保管庫にあるかも確認します）
+3. `mankan/posts.json` ごと保管庫に上げる → 手動ボタンの dry-run で確認
+
+### 外部の目覚まし（Cloudflare）を「毎分＋時刻表」方式に切り替える手順
+**ソムリエの投稿時刻（7:00〜7:05、20:50〜20:55）をまたがない時間帯に作業してください。**
+1. Cloudflare → **Workers & Pages** → `millegrains-autopost-alarm` → **Edit code**
+2. 中身を全部消し、新しい `autopost/cloudflare-worker.js` を貼り付けて **Deploy**
+3. **Settings** → **Trigger Events** → **Cron Triggers** に `* * * * *` を追加
+4. 古い4つ（`0 22 * * *`・`5 22 * * *`・`50 11 * * *`・`55 11 * * *`）を削除
+   - 3. と 4. の間に古い目覚ましが鳴っても、二重投稿にはなりません
+5. 確認：Worker の **Observability**（ログ）で、7:25 などに「chintai-autopost.yml を起動しました」と出ていること
+

@@ -1,5 +1,9 @@
 """1問一答を Instagram・Facebookページ・Threads へ投稿するプログラム。
 
+資格ごとの設定（投稿先・時刻・Instagramの窓口の種類など）は autopost/exams.json にあります。
+  ・ソムリエ … @millegrains（Instagram・Facebookページ・Threads）朝7:00／夜20:50
+  ・マン管・賃管 … @millegrains_app（Threads・Instagram）。時刻は exams.json の morning_at／evening_at
+
 GitHub Actions から朝・夜に呼ばれます。手元で試すときの例:
     python autopost/post.py --exam sommelier --dry-run                 # 明日の朝・夜の予定を表示
     python autopost/post.py --exam sommelier --dry-run --date 2026-12-01
@@ -28,20 +32,26 @@ CONFIG = REPO / "autopost" / "exams.json"
 STATE = REPO / "autopost" / "state.json"
 
 JST = dt.timezone(dt.timedelta(hours=9), "JST")
-GRAPH = f"https://graph.facebook.com/{os.environ.get('META_GRAPH_VERSION') or 'v26.0'}"
+GRAPH_VERSION = os.environ.get('META_GRAPH_VERSION') or 'v26.0'
+GRAPH = f"https://graph.facebook.com/{GRAPH_VERSION}"
+IG_GRAPH = f"https://graph.instagram.com/{GRAPH_VERSION}"  # Instagramログイン方式（Facebookページを使わない）の窓口
 THREADS = "https://graph.threads.net/v1.0"
 THREADS_LIMIT = 500
 
 PLATFORM_NAMES = {"instagram": "Instagram", "facebook": "Facebookページ", "threads": "Threads"}
 SLOT_NAMES = {"morning": "朝（問題）", "evening": "夜（解答）"}
-MORNING_AT = dt.time(7, 0)    # 朝の回の時刻（日本時間）
-EVENING_AT = dt.time(20, 50)  # 夜の回の時刻（日本時間）
+MORNING_AT = dt.time(7, 0)    # 朝の回の時刻（日本時間）。exams.json の morning_at があればそちらを使う
+EVENING_AT = dt.time(20, 50)  # 夜の回の時刻（日本時間）。exams.json の evening_at があればそちらを使う
 RETRY_LIMIT = 3               # 自動実行で同じ投稿先が続けて失敗したら、その回はあきらめる回数
 APP_LINKS_RE = re.compile(r"^iOS → \S+\nAndroid → \S+$", re.MULTILINE)
 
 
 class PostError(Exception):
     """本人にそのまま見せる日本語の失敗理由。"""
+
+
+class NotConfigured(Exception):
+    """その投稿先の合鍵がまだ金庫に無い（準備中なので飛ばす）。"""
 
 
 # ---------------------------------------------------------------- 通信まわり
@@ -105,6 +115,21 @@ def need(*names: str) -> list[str]:
     return [os.environ[n] for n in names]
 
 
+# 投稿先ごとに「これが金庫に無ければ未設定」とみなす合鍵の名前
+TOKEN_ENV = {"instagram": "META_PAGE_ACCESS_TOKEN", "facebook": "META_PAGE_ACCESS_TOKEN", "threads": "THREADS_ACCESS_TOKEN"}
+IG_LOGIN_TOKEN_ENV = "IG_LOGIN_ACCESS_TOKEN"
+
+
+def token_env(platform: str, exam: dict) -> str:
+    if platform == "instagram" and exam.get("instagram_api") == "instagram_login":
+        return IG_LOGIN_TOKEN_ENV
+    return TOKEN_ENV[platform]
+
+
+def configured(platform: str, exam: dict) -> bool:
+    return bool(os.environ.get(token_env(platform, exam)))
+
+
 def wait_ready(name: str, url: str, token: str, field: str) -> None:
     """画像の受け取り処理が終わるまで待つ（最大およそ2分）。"""
     for _ in range(40):
@@ -120,30 +145,48 @@ def wait_ready(name: str, url: str, token: str, field: str) -> None:
 
 # ---------------------------------------------------------------- 各投稿先
 
-def instagram_post(image_url: str, text: str) -> str:
+def _instagram_endpoint(exam: dict) -> tuple[str, str, str]:
+    """(窓口のアドレス, 合鍵, Instagramの番号) を返す。
+
+    ソムリエ … Facebookログイン方式（Facebookページの合鍵、graph.facebook.com）
+    マン管・賃管 … Instagramログイン方式（Instagramの合鍵、graph.instagram.com。Facebookページ不要）
+    """
+    if exam.get("instagram_api") == "instagram_login":
+        (token,) = need(IG_LOGIN_TOKEN_ENV)
+        ig = os.environ.get("IG_LOGIN_USER_ID")
+        if not ig:
+            me = call(PLATFORM_NAMES["instagram"], "GET", f"{IG_GRAPH}/me",
+                      {"fields": "user_id,username", "access_token": token})
+            ig = str(me.get("user_id") or me.get("id"))
+        return IG_GRAPH, token, ig
     token, ig = need("META_PAGE_ACCESS_TOKEN", "IG_USER_ID")
+    return GRAPH, token, ig
+
+
+def instagram_post(image_url: str, text: str, exam: dict) -> str:
+    base, token, ig = _instagram_endpoint(exam)
     name = PLATFORM_NAMES["instagram"]
-    c = call(name, "POST", f"{GRAPH}/{ig}/media",
+    c = call(name, "POST", f"{base}/{ig}/media",
              {"image_url": image_url, "caption": text, "access_token": token})
-    wait_ready(name, f"{GRAPH}/{c['id']}", token, "status_code")
-    return call(name, "POST", f"{GRAPH}/{ig}/media_publish",
+    wait_ready(name, f"{base}/{c['id']}", token, "status_code")
+    return call(name, "POST", f"{base}/{ig}/media_publish",
                 {"creation_id": c["id"], "access_token": token})["id"]
 
 
-def instagram_comment(media_id: str, text: str) -> str:
-    (token,) = need("META_PAGE_ACCESS_TOKEN")
-    return call(PLATFORM_NAMES["instagram"], "POST", f"{GRAPH}/{media_id}/comments",
+def instagram_comment(media_id: str, text: str, image_url: str, exam: dict) -> str:
+    base, token, _ = _instagram_endpoint(exam)
+    return call(PLATFORM_NAMES["instagram"], "POST", f"{base}/{media_id}/comments",
                 {"message": text, "access_token": token})["id"]
 
 
-def facebook_post(image_url: str, text: str) -> str:
+def facebook_post(image_url: str, text: str, exam: dict) -> str:
     token, page = need("META_PAGE_ACCESS_TOKEN", "FB_PAGE_ID")
     r = call(PLATFORM_NAMES["facebook"], "POST", f"{GRAPH}/{page}/photos",
              {"url": image_url, "message": text, "published": "true", "access_token": token})
     return r.get("post_id") or r["id"]
 
 
-def facebook_comment(post_id: str, text: str) -> str:
+def facebook_comment(post_id: str, text: str, image_url: str, exam: dict) -> str:
     (token,) = need("META_PAGE_ACCESS_TOKEN")
     return call(PLATFORM_NAMES["facebook"], "POST", f"{GRAPH}/{post_id}/comments",
                 {"message": text, "access_token": token})["id"]
@@ -161,11 +204,14 @@ def _threads_publish(params: dict) -> str:
                 {"creation_id": c["id"], "access_token": token})["id"]
 
 
-def threads_post(image_url: str, text: str) -> str:
+def threads_post(image_url: str, text: str, exam: dict) -> str:
     return _threads_publish({"media_type": "IMAGE", "image_url": image_url, "text": text})
 
 
-def threads_reply(parent_id: str, text: str) -> str:
+def threads_reply(parent_id: str, text: str, image_url: str, exam: dict) -> str:
+    if exam.get("threads_reply_image"):  # マン管・賃管は夜の返信にもカード画像を付ける
+        return _threads_publish({"media_type": "IMAGE", "image_url": image_url,
+                                 "text": text, "reply_to_id": parent_id})
     return _threads_publish({"media_type": "TEXT", "text": text, "reply_to_id": parent_id})
 
 
@@ -174,27 +220,48 @@ REPLIERS = {"instagram": instagram_comment, "facebook": facebook_comment, "threa
 REPLY_KIND = {"instagram": "朝の投稿へのコメント", "facebook": "朝の投稿へのコメント", "threads": "朝の投稿への返信"}
 
 
+def reply_kind(platform: str, exam: dict) -> str:
+    if platform == "threads" and exam.get("threads_reply_image"):
+        return "朝の投稿への返信（カード画像付き）"
+    return REPLY_KIND[platform]
+
+
 # ---------------------------------------------------------------- 本文・台帳・記録
 
 def adapt(platform: str, text: str, exam: dict) -> str:
-    """X用の原稿を各投稿先向けに直す（Instagramだけリンク2行を1行に置き換え）。"""
-    if platform == "instagram":
-        new, n = APP_LINKS_RE.subn(exam["instagram_app_line"], text)
-        if n == 0 and "http" in text:
-            print(f"  ⚠ Instagram用の置き換え対象（iOS/Androidの2行）が見つかりませんでした")
-        return new
-    return text
+    """原稿を各投稿先向けに直す（Instagramだけ、押せないリンクの行を「プロフィールのリンクから」に置き換え）。"""
+    if platform != "instagram":
+        return text
+    rules = exam.get("instagram_replacements")
+    if rules:
+        # マン管・賃管: 決められた形のリンク行を置き換え、リンクが残ったら安全のため止める
+        for pattern, repl in rules:
+            text = re.sub(pattern, repl, text)
+        if "http" in text:
+            raise PostError("Instagram用の文面にリンク（http〜）が残っています。原稿のリンクの書き方が"
+                            "想定と違うため、Instagramへの投稿を止めました（exams.json の置き換え文を確認）")
+        return text
+    new, n = APP_LINKS_RE.subn(exam["instagram_app_line"], text)
+    if n == 0 and "http" in text:
+        print(f"  ⚠ Instagram用の置き換え対象（iOS/Androidの2行）が見つかりませんでした")
+    return new
 
 
-def load_state() -> dict:
-    if STATE.exists():
-        return json.loads(STATE.read_text(encoding="utf-8"))
+def state_path(exam: dict) -> Path:
+    """投稿記録のファイル。資格ごとに分けると、同じ時刻に動いても記録がぶつからない。"""
+    return REPO / exam["state"] if exam.get("state") else STATE
+
+
+def load_state(exam: dict) -> dict:
+    path = state_path(exam)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
     return {}
 
 
-def save_state(state: dict) -> None:
-    STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                     encoding="utf-8", newline="\n")
+def save_state(state: dict, exam: dict) -> None:
+    state_path(exam).write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+                                encoding="utf-8", newline="\n")
 
 
 def plan(platform: str, slot: str, entry: dict, exam: dict, day_state: dict) -> tuple[str, str | None, str]:
@@ -204,23 +271,31 @@ def plan(platform: str, slot: str, entry: dict, exam: dict, day_state: dict) -> 
         return "カード画像付きで投稿", None, text
     parent = day_state.get("morning", {}).get(platform, {}).get("id")
     if parent:
-        return REPLY_KIND[platform], parent, text
+        return reply_kind(platform, exam), parent, text
     return "単独の投稿（朝の投稿が無いためカード画像付き）", None, text
 
 
 # ---------------------------------------------------------------- 実行
 
-def due_slot(now: dt.datetime) -> tuple[str, dt.date]:
+def slot_times(exam: dict) -> tuple[dt.time, dt.time]:
+    """資格ごとの朝・夜の時刻（exams.json に無ければソムリエの 7:00／20:50）。"""
+    m = dt.time.fromisoformat(exam["morning_at"]) if exam.get("morning_at") else MORNING_AT
+    e = dt.time.fromisoformat(exam["evening_at"]) if exam.get("evening_at") else EVENING_AT
+    return m, e
+
+
+def due_slot(now: dt.datetime, exam: dict | None = None) -> tuple[str, dt.date]:
     """今の日本時間から「いま投稿すべき回」を決める。
 
     GitHubの目覚ましは何時間も遅れることがあるため、起動時刻の日付ではなく
-    「直前に来た 7:00 か 20:50 はどちらか」で判断する。
-      07:00〜20:49 → 今日の朝 ／ 20:50〜23:59 → 今日の夜 ／ 00:00〜06:59 → 前の日の夜
+    「直前に来た 朝の時刻 か 夜の時刻 はどちらか」で判断する（ソムリエなら 7:00／20:50）。
+      朝の時刻〜夜の時刻の前 → 今日の朝 ／ 夜の時刻〜23:59 → 今日の夜 ／ 0:00〜朝の時刻の前 → 前の日の夜
     """
+    morning_at, evening_at = slot_times(exam or {})
     t = now.time()
-    if t >= EVENING_AT:
+    if t >= evening_at:
         return "evening", now.date()
-    if t >= MORNING_AT:
+    if t >= morning_at:
         return "morning", now.date()
     return "evening", now.date() - dt.timedelta(days=1)
 
@@ -238,19 +313,23 @@ def dry_run(exam_key: str, exam: dict, entries: dict, date: dt.date, slots: list
         print("  ✓ カード画像は公開アドレスから取得できます")
     except PostError as e:
         print(f"  ❌ {e}")
-    day_state = load_state().get(exam_key, {}).get(date.isoformat(), {})
+    day_state = load_state(exam).get(exam_key, {}).get(date.isoformat(), {})
     for slot in slots:
         print("\n" + "=" * 60)
         print(f"{SLOT_NAMES[slot]}  {entry[slot + '_time']}")
         for platform in exam["platforms"]:
             done = day_state.get(slot, {}).get(platform)
-            action, parent, text = plan(platform, slot, entry, exam, day_state)
             print("-" * 60)
+            try:
+                action, parent, text = plan(platform, slot, entry, exam, day_state)
+            except PostError as e:
+                print(f"▶ {PLATFORM_NAMES[platform]}: ❌ {e}")
+                continue
             if done:
                 print(f"▶ {PLATFORM_NAMES[platform]}: 投稿済みのためスキップ（番号 {done['id']}）")
                 continue
             if slot == "evening" and parent is None:
-                action = (f"{REPLY_KIND[platform]}"
+                action = (f"{reply_kind(platform, exam)}"
                           "（※朝の投稿に成功していれば。朝が失敗した場合はカード画像付きの単独投稿）")
             print(f"▶ {PLATFORM_NAMES[platform]}: {action}（{len(text)}字）")
             print(text)
@@ -266,7 +345,7 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
         return 0
     print(f"問題番号 {entry['no']} ／ 分野 [{entry['category']}] ／ カード {entry['card']}")
 
-    state = load_state()
+    state = load_state(exam)
     day_state = state.setdefault(exam_key, {}).setdefault(today.isoformat(), {})
     image_url = exam["image_base_url"] + entry["card"]
     image_error: PostError | None = None
@@ -282,14 +361,25 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
         if done:
             print(f"・{name}: 投稿済みのためスキップ（番号 {done['id']}）")
             continue
+        if exam.get("skip_platform_without_token") and not configured(platform, exam):
+            print(f"・{name}: 合鍵（{token_env(platform, exam)}）がまだ金庫に無いため、今回は飛ばします（準備中）")
+            continue
         if retry_limit and tries.get(platform, 0) >= RETRY_LIMIT:
             print(f"・{name}: この回は{RETRY_LIMIT}回続けて失敗したため、今回は試しません"
                   "（原因を直したら手動ボタンで実行してください）")
             continue
-        action, parent, text = plan(platform, slot, entry, exam, day_state)
         try:
+            action, parent, text = plan(platform, slot, entry, exam, day_state)
             if parent:
-                new_id = REPLIERS[platform](parent, text)
+                if exam.get("threads_reply_image") and platform == "threads":
+                    if image_error is None:
+                        try:
+                            check_image(image_url)
+                        except PostError as e:
+                            image_error = e
+                    if image_error:
+                        raise image_error
+                new_id = REPLIERS[platform](parent, text, image_url, exam)
             else:
                 if image_error is None:
                     try:
@@ -298,11 +388,11 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
                         image_error = e
                 if image_error:
                     raise image_error
-                new_id = POSTERS[platform](image_url, text)
+                new_id = POSTERS[platform](image_url, text, exam)
         except PostError as e:
             failures.append(f"{name}: {e}")
             tries[platform] = tries.get(platform, 0) + 1
-            save_state(state)
+            save_state(state, exam)
             print(f"・{name}: ❌ 失敗 … {e}")
             print(f"::error title={name}の投稿に失敗::{e}")
             continue
@@ -312,7 +402,7 @@ def live(exam_key: str, exam: dict, entries: dict, today: dt.date, slot: str, on
             "at": dt.datetime.now(JST).isoformat(timespec="seconds"),
         }
         tries.pop(platform, None)
-        save_state(state)  # 1か所ごとにすぐ記録（途中で止まっても二重投稿しないように）
+        save_state(state, exam)  # 1か所ごとにすぐ記録（途中で止まっても二重投稿しないように）
         print(f"・{name}: ✅ 完了 … {action}（番号 {new_id}）")
 
     if failures:
@@ -358,7 +448,7 @@ def main() -> int:
         return 2
     slot = args.slot
     if slot == "auto":
-        slot, today = due_slot(dt.datetime.now(JST))
+        slot, today = due_slot(dt.datetime.now(JST), exam)
         print(f"（自動判定）今の時刻なら {today.isoformat()} の{SLOT_NAMES[slot]}の番です")
     return live(args.exam, exam, entries, today, slot, only, retry_limit=args.slot == "auto")
 
