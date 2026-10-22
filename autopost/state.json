@@ -20,7 +20,18 @@
    }
   },
   "2026-10-22": {
+   "evening": {
+    "threads": {
+     "at": "2026-10-22T20:50:35+09:00",
+     "id": "18144478768560871",
+     "kind": "朝の投稿への返信"
+    }
+   },
    "failures": {
+    "evening": {
+     "facebook": 1,
+     "instagram": 1
+    },
     "morning": {}
    },
    "morning": {
